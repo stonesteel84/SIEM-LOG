@@ -1,1 +1,55 @@
+# 마지막 4장
 
+## 1. 성능 문제 개선
+ 1-1 시간 / 1-2 이벤트 지연 / 1-3 인덱서 큐 모니터링 / 1-4 느리고 자원 집약적인 검색 식별 / 1-5 설정 변경으로 가능
+
+### 타임 스탬프가 잘못된 이벤트 > 1-1 Time issues (시간 이슈)
+
+- Time Parsing Issue의 경우 아마 이벤트는 미래에 있을 것
+- TimeParserVerbose 경고 > plunkd.log(잘못된 TIME_FORMAT 또는 LINE_BREAKER 오류)
+```
+[source::transaction.log]
+TIME PREFIX = ^
+> RegEX that tells Splunk where to start looking for the timestamp
+TIME FORMAT = %Y-%m-%d %H:%M:%S
+> Strptime format that tells Splunk what the timestamp looks like
+MAX_TIMESTAMP_LOOKAHEAD = 70
+> # of characters Splunk will read into the log to locate the timestamp
+```
+- `_time`이나 `_indextime`이 차이가 나는지 확인
+- `index=x sourcetype=y regex_raw!="^\d{2}-\d{2}-\d{4}\s\d{2}:\d{2}:\d{2}.\d{3}\s-\d{4}"` 정규식 검색 실시
+- `index=x sourcetype=y punct!="--_::._-" punct필드 사용 검색`
+
+### 이벤트 지연 - 메모리
+
+## 2. 검색 최적화
+> - **검색을 최적화하기 위해 따를 수 있는 일련의 기본 원칙**
+  - **필요한 데이터만 검색**
+  - **적절한 기간 설정**
+  - 가능한 한 적은 양의 데이터 이동
+  - 가능한 한 많은 작업을 병렬화
+
+### 색인 및 검색
+> 검색을 실행하면 Splunk 소프트웨어는 인덱스 파일의 정보를 사용하여 **디스크**에서 검색할 이벤트를 식별
+- ![](https://oss-lab.notion.site/image/https%3A%2F%2Fs3-us-west-2.amazonaws.com%2Fsecure.notion-static.com%2F91a166eb-5a46-479b-b5c5-0ff307db9898%2FUntitled.png?table=block&id=8c88762e-fda1-4760-be8c-08b4f98ce194&spaceId=d2bd6b0b-0904-438c-94d0-0c936ece43d0&width=1210&userId=&cache=v2)
+- 데이터를 별도의 인덱스로 분할
+- **자주 사용하는 검색어**를 앞으로(search sourcetype > lookup > search > eval > search)
+  ```
+  # 최적화 전
+  sourcetype=my_source = 100만개
+  | lookup my_lookup_file D OUTPUTNEW L = 100만개
+  | eval E=L/T = 100만개
+  | search A=25 L>100 E>50
+  ```
+  ```
+  # 최적화 후 (**A=25**를 앞으로)
+  sourcetype=my_source A=25
+  | lookup my_lookup_file D OUTPUTNEW L
+  | search L>100
+  | eval E=L/T 
+  | search  E>50
+  ```
+- 명령을 계산하기 전에 필터링 명령 사용
+- 검색 작업 검사기 사용
+- 고속 모드 사용
+- 병렬 처리
